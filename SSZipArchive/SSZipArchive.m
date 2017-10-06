@@ -7,9 +7,10 @@
 //
 
 #import "SSZipArchive.h"
-#include "unzip.h"
-#include "zip.h"
-#include "minishared.h"
+#include "mz_error.h"
+#include "mz_os.h"
+#include "mz_unzip.h"
+#include "mz_zip.h"
 
 #include <sys/stat.h>
 
@@ -50,15 +51,15 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     }
     
     int ret = unzGoToFirstFile(zip);
-    if (ret == UNZ_OK) {
+    if (ret == MZ_OK) {
         do {
             ret = unzOpenCurrentFile(zip);
-            if (ret != UNZ_OK) {
+            if (ret != MZ_OK) {
                 return NO;
             }
             unz_file_info fileInfo = {};
             ret = unzGetCurrentFileInfo(zip, &fileInfo, NULL, 0, NULL, 0, NULL, 0);
-            if (ret != UNZ_OK) {
+            if (ret != MZ_OK) {
                 return NO;
             } else if ((fileInfo.flag & 1) == 1) {
                 return YES;
@@ -66,7 +67,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             
             unzCloseCurrentFile(zip);
             ret = unzGoToNextFile(zip);
-        } while (ret == UNZ_OK && UNZ_OK != UNZ_END_OF_LIST_OF_FILE);
+        } while (ret == MZ_OK && MZ_OK != UNZ_END_OF_LIST_OF_FILE);
     }
     
     return NO;
@@ -88,14 +89,14 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     }
 
     int ret = unzGoToFirstFile(zip);
-    if (ret == UNZ_OK) {
+    if (ret == MZ_OK) {
         do {
             if (pw.length == 0) {
                 ret = unzOpenCurrentFile(zip);
             } else {
                 ret = unzOpenCurrentFilePassword(zip, [pw cStringUsingEncoding:NSUTF8StringEncoding]);
             }
-            if (ret != UNZ_OK) {
+            if (ret != MZ_OK) {
                 if (ret != UNZ_BADPASSWORD) {
                     if (error) {
                         *error = [NSError errorWithDomain:SSZipArchiveErrorDomain
@@ -107,7 +108,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             }
             unz_file_info fileInfo = {};
             ret = unzGetCurrentFileInfo(zip, &fileInfo, NULL, 0, NULL, 0, NULL, 0);
-            if (ret != UNZ_OK) {
+            if (ret != MZ_OK) {
                 if (error) {
                     *error = [NSError errorWithDomain:SSZipArchiveErrorDomain
                                                  code:SSZipArchiveErrorCodeFileInfoNotLoadable
@@ -134,7 +135,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             
             unzCloseCurrentFile(zip);
             ret = unzGoToNextFile(zip);
-        } while (ret == UNZ_OK && UNZ_OK != UNZ_END_OF_LIST_OF_FILE);
+        } while (ret == MZ_OK && MZ_OK != UNZ_END_OF_LIST_OF_FILE);
     }
     
     // No password required
@@ -248,7 +249,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     unzGetGlobalInfo(zip, &globalInfo);
     
     // Begin unzipping
-    if (unzGoToFirstFile(zip) != UNZ_OK)
+    if (unzGoToFirstFile(zip) != MZ_OK)
     {
         NSDictionary *userInfo = @{NSLocalizedDescriptionKey: @"failed to open first file in zip file"};
         NSError *err = [NSError errorWithDomain:SSZipArchiveErrorDomain code:SSZipArchiveErrorCodeFailedOpenFileInZip userInfo:userInfo];
@@ -289,7 +290,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                 ret = unzOpenCurrentFilePassword(zip, [password cStringUsingEncoding:NSUTF8StringEncoding]);
             }
             
-            if (ret != UNZ_OK) {
+            if (ret != MZ_OK) {
                 unzippingError = [NSError errorWithDomain:@"SSZipArchiveErrorDomain" code:SSZipArchiveErrorCodeFailedOpenFileInZip userInfo:@{NSLocalizedDescriptionKey: @"failed to open file in zip file"}];
                 success = NO;
                 break;
@@ -300,7 +301,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             memset(&fileInfo, 0, sizeof(unz_file_info));
             
             ret = unzGetCurrentFileInfo(zip, &fileInfo, NULL, 0, NULL, 0, NULL, 0);
-            if (ret != UNZ_OK) {
+            if (ret != MZ_OK) {
                 unzippingError = [NSError errorWithDomain:@"SSZipArchiveErrorDomain" code:SSZipArchiveErrorCodeFileInfoNotLoadable userInfo:@{NSLocalizedDescriptionKey: @"failed to retrieve info for file"}];
                 success = NO;
                 unzCloseCurrentFile(zip);
@@ -551,7 +552,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                 progressHandler(strPath, fileInfo, currentFileNumber, globalInfo.number_entry);
             }
         }
-    } while (ret == UNZ_OK && success);
+    } while (ret == MZ_OK && success);
     
     // Close
     unzClose(zip);
@@ -892,7 +893,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     NSAssert((_zip != NULL), @"[SSZipArchive] Attempting to close an archive which was never opened");
     int error = zipClose(_zip, NULL);
     _zip = nil;
-    return error == UNZ_OK;
+    return error == MZ_OK;
 }
 
 #pragma mark - Private
