@@ -44,32 +44,42 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
 #pragma mark - Password check
 
 + (BOOL)isFilePasswordProtectedAtPath:(NSString *)path {
-    // Begin opening
-    zipFile zip = unzOpen(path.fileSystemRepresentation);
-    if (zip == NULL) {
+    void *stream = NULL;
+    mz_stream_os_create(&stream);
+    if (mz_stream_open(stream, path.fileSystemRepresentation, MZ_STREAM_MODE_READ) != MZ_OK)
+    {
+        mz_stream_os_delete(&stream);
         return NO;
     }
     
-    int ret = unzGoToFirstFile(zip);
+    // Begin opening
+    void *zip = mz_unzip_open(stream);
+    if (zip == NULL) {
+        mz_stream_os_delete(&stream);
+        return NO;
+    }
+    
+    int ret = mz_unzip_goto_first_entry(zip);
     if (ret == MZ_OK) {
         do {
-            ret = unzOpenCurrentFile(zip);
+            mz_unzip_file *fileInfo = NULL;
+            ret = mz_unzip_entry_get_info(zip, &fileInfo);
             if (ret != MZ_OK) {
+                mz_unzip_close(stream);
+                mz_stream_os_delete(&stream);
                 return NO;
-            }
-            unz_file_info fileInfo = {};
-            ret = unzGetCurrentFileInfo(zip, &fileInfo, NULL, 0, NULL, 0, NULL, 0);
-            if (ret != MZ_OK) {
-                return NO;
-            } else if ((fileInfo.flag & 1) == 1) {
+            } else if ((fileInfo->flag & 1) == 1) {
+                mz_unzip_close(stream);
+                mz_stream_os_delete(&stream);
                 return YES;
             }
             
-            unzCloseCurrentFile(zip);
-            ret = unzGoToNextFile(zip);
-        } while (ret == MZ_OK && MZ_OK != UNZ_END_OF_LIST_OF_FILE);
+            ret = mz_unzip_goto_next_entry(zip);
+        } while (ret == MZ_OK);
     }
     
+    mz_unzip_close(stream);
+    mz_stream_os_delete(&stream);
     return NO;
 }
 
