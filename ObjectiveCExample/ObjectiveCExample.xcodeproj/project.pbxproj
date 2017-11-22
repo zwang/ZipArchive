@@ -55,7 +55,7 @@
 		6BFA1E5841DFEC4E21BA7543 /* Pods_core_ObjectiveCExampleTests_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 38A85B006A1C84E475375AE1 /* Pods_core_ObjectiveCExampleTests_macOS.framework */; };
 		8DFE19EF1BDA9FF300709011 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 8DFE19EE1BDA9FF300709011 /* main.m */; };
 		8DFE19F21BDA9FF300709011 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 8DFE19F11BDA9FF300709011 /* AppDelegate.m */; };
-		8DFE19F51BDA9FF300709011 /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 8DFE19F41BDA9FF300709011 /* ViewController.m */; };
+		8DFE19F51BDA9FF300709011 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8DFE19F41BDA9FF300709011 /* ViewController.mm */; };
 		8DFE19F81BDA9FF300709011 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8DFE19F61BDA9FF300709011 /* Main.storyboard */; };
 		8DFE19FA1BDA9FF300709011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8DFE19F91BDA9FF300709011 /* Assets.xcassets */; };
 		8DFE19FD1BDA9FF300709011 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8DFE19FB1BDA9FF300709011 /* LaunchScreen.storyboard */; };
@@ -102,7 +102,7 @@
 		8DFE19F01BDA9FF300709011 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		8DFE19F11BDA9FF300709011 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
 		8DFE19F31BDA9FF300709011 /* ViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
-		8DFE19F41BDA9FF300709011 /* ViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ViewController.m; sourceTree = "<group>"; };
+		8DFE19F41BDA9FF300709011 /* ViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
 		8DFE19F71BDA9FF300709011 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		8DFE19F91BDA9FF300709011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8DFE19FC1BDA9FF300709011 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -216,7 +216,7 @@
 				8DFE19F01BDA9FF300709011 /* AppDelegate.h */,
 				8DFE19F11BDA9FF300709011 /* AppDelegate.m */,
 				8DFE19F31BDA9FF300709011 /* ViewController.h */,
-				8DFE19F41BDA9FF300709011 /* ViewController.m */,
+				8DFE19F41BDA9FF300709011 /* ViewController.mm */,
 				8DFE19F61BDA9FF300709011 /* Main.storyboard */,
 				8DFE19F91BDA9FF300709011 /* Assets.xcassets */,
 				8DFE19FB1BDA9FF300709011 /* LaunchScreen.storyboard */,
@@ -549,7 +549,7 @@
 			);
 			inputPaths = (
 				"${SRCROOT}/Pods/Target Support Files/Pods-core-ObjectiveCExampleTests_iOS/Pods-core-ObjectiveCExampleTests_iOS-frameworks.sh",
-				"${BUILT_PRODUCTS_DIR}/SSZipArchive-iOS/SSZipArchive.framework",
+				"${BUILT_PRODUCTS_DIR}/SSZipArchive-iOS4.3/SSZipArchive.framework",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
@@ -636,10 +636,12 @@
 			);
 			inputPaths = (
 				"${SRCROOT}/Pods/Target Support Files/Pods-core-ObjectiveCExample/Pods-core-ObjectiveCExample-frameworks.sh",
-				"${BUILT_PRODUCTS_DIR}/SSZipArchive-iOS/SSZipArchive.framework",
+				"${BUILT_PRODUCTS_DIR}/OpenCV/opencv2.framework",
+				"${BUILT_PRODUCTS_DIR}/SSZipArchive-iOS8.1/SSZipArchive.framework",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/opencv2.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/SSZipArchive.framework",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -654,7 +656,7 @@
 			);
 			inputPaths = (
 				"${SRCROOT}/Pods/Target Support Files/Pods-core-ObjectiveCExampleTests_macOS/Pods-core-ObjectiveCExampleTests_macOS-frameworks.sh",
-				"${BUILT_PRODUCTS_DIR}/SSZipArchive-macOS/SSZipArchive.framework",
+				"${BUILT_PRODUCTS_DIR}/SSZipArchive-macOS10.8/SSZipArchive.framework",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
@@ -687,7 +689,7 @@
 			);
 			inputPaths = (
 				"${SRCROOT}/Pods/Target Support Files/Pods-core-ObjectiveCExampleTests_tvOS/Pods-core-ObjectiveCExampleTests_tvOS-frameworks.sh",
-				"${BUILT_PRODUCTS_DIR}/SSZipArchive-tvOS/SSZipArchive.framework",
+				"${BUILT_PRODUCTS_DIR}/SSZipArchive-tvOS9.0/SSZipArchive.framework",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
@@ -742,7 +744,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8DFE19F51BDA9FF300709011 /* ViewController.m in Sources */,
+				8DFE19F51BDA9FF300709011 /* ViewController.mm in Sources */,
 				8DFE19F21BDA9FF300709011 /* AppDelegate.m in Sources */,
 				8DFE19EF1BDA9FF300709011 /* main.m in Sources */,
 			);

@@ -8,7 +8,8 @@ abstract_target 'core' do
   pod 'SSZipArchive', :path => '..'
 
   target 'ObjectiveCExample' do
-    platform :ios
+    pod 'OpenCV', '~> 3.2.0'
+    platform :ios, '8.1'
   end
 
   target 'ObjectiveCExampleTests_iOS' do

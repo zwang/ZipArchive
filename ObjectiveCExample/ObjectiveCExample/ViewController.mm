@@ -6,8 +6,10 @@
 //
 //
 
+#import "opencv.hpp"
 #import "ViewController.h"
 #import "SSZipArchive.h"
+#include <zlib.h>
 
 @interface ViewController ()
 
@@ -43,9 +45,9 @@
     BOOL success = [SSZipArchive createZipFileAtPath:_zipPath
                              withContentsOfDirectory:sampleDataPath
                                  keepParentDirectory:NO
-                                    compressionLevel:-1
+                                    compressionLevel:Z_DEFAULT_COMPRESSION
                                             password:password.length > 0 ? password : nil
-                                                 AES:YES
+                                                 AES:NO
                                      progressHandler:nil];
     if (success) {
         NSLog(@"Success zip");
