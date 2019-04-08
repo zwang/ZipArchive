@@ -30,6 +30,10 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
 - (NSString *)_hexString;
 @end
 
+@interface NSString (SSZipArchive)
+- (NSString *)_sanitizedPath;
+@end
+
 @interface SSZipArchive ()
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
 @end
@@ -305,8 +309,9 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     NSError *unzippingError;
     do {
         currentFileNumber++;
-        if (ret == UNZ_END_OF_LIST_OF_FILE)
+        if (ret == UNZ_END_OF_LIST_OF_FILE) {
             break;
+        }
         @autoreleasepool {
             if (password.length == 0) {
                 ret = unzOpenCurrentFile(zip);
@@ -376,10 +381,6 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                 free(filename);
                 continue;
             }
-            if (!strPath.length) {
-                // if filename data is unsalvageable, we default to currentFileNumber
-                strPath = @(currentFileNumber).stringValue;
-            }
             
             // Check if it contains directory
             BOOL isDirectory = NO;
@@ -388,9 +389,11 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             }
             free(filename);
             
-            // Contains a path
-            if ([strPath rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/\\"]].location != NSNotFound) {
-                strPath = [strPath stringByReplacingOccurrencesOfString:@"\\" withString:@"/"];
+            // Sanitize paths in the file name.
+            strPath = [strPath _sanitizedPath];
+            if (!strPath.length) {
+                // if filename data is unsalvageable, we default to currentFileNumber
+                strPath = @(currentFileNumber).stringValue;
             }
             
             NSString *fullPath = [destination stringByAppendingPathComponent:strPath];
@@ -406,7 +409,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             } else {
                 [fileManager createDirectoryAtPath:fullPath.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:directoryAttr error:&err];
             }
-            if (nil != err) {
+            if (err != nil) {
                 if ([err.domain isEqualToString:NSCocoaErrorDomain] &&
                     err.code == 640) {
                     unzippingError = err;
@@ -424,7 +427,9 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                 continue;
             }
             
-            if (!fileIsSymbolicLink) {
+            if (isDirectory && !fileIsSymbolicLink) {
+                // nothing to read/write for a directory
+            } else if (!fileIsSymbolicLink) {
                 // ensure we are not creating stale file entries
                 int readBytes = unzReadCurrentFile(zip, buffer, 4096);
                 if (readBytes >= 0) {
@@ -714,29 +719,31 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         NSDirectoryEnumerator *dirEnumerator = [fileManager enumeratorAtPath:directoryPath];
         NSArray<NSString *> *allObjects = dirEnumerator.allObjects;
         NSUInteger total = allObjects.count, complete = 0;
-        NSString *fileName;
-        for (fileName in allObjects) {
-            BOOL isDir;
+        if (keepParentDirectory && !total) {
+            allObjects = @[@""];
+            total = 1;
+        }
+        for (__strong NSString *fileName in allObjects) {
             NSString *fullFilePath = [directoryPath stringByAppendingPathComponent:fileName];
-            [fileManager fileExistsAtPath:fullFilePath isDirectory:&isDir];
             
-            if (keepParentDirectory)
-            {
+            if (keepParentDirectory) {
                 fileName = [directoryPath.lastPathComponent stringByAppendingPathComponent:fileName];
             }
             
+            BOOL isDir;
+            [fileManager fileExistsAtPath:fullFilePath isDirectory:&isDir];
             if (!isDir) {
+                // file
                 success &= [zipArchive writeFileAtPath:fullFilePath withFileName:fileName compressionLevel:compressionLevel password:password AES:aes];
-            }
-            else
-            {
-                if ([[NSFileManager defaultManager] subpathsOfDirectoryAtPath:fullFilePath error:nil].count == 0)
-                {
+            } else {
+                // directory
+                if (![fileManager enumeratorAtPath:fullFilePath].nextObject) {
+                    // empty directory
                     success &= [zipArchive writeFolderAtPath:fullFilePath withFolderName:fileName withPassword:password];
                 }
             }
-            complete++;
             if (progressHandler) {
+                complete++;
                 progressHandler(complete, total);
             }
         }
@@ -860,7 +867,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     NSAssert((_zip != NULL), @"[SSZipArchive] Attempting to close an archive which was never opened");
     int error = zipClose(_zip, NULL);
     _zip = nil;
-    return error == UNZ_OK;
+    return error == ZIP_OK;
 }
 
 #pragma mark - Private
@@ -880,7 +887,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     uint16_t made_by = version_made_by >> 8;
     BOOL made_on_dos = made_by == 0;
     BOOL languageEncoding = (flag & (1 << 11)) != 0;
-    if(!languageEncoding && made_on_dos) {
+    if (!languageEncoding && made_on_dos) {
         // APPNOTE.TXT D.1:
         //   D.2 If general purpose bit 11 is unset, the file name and comment should conform
         //   to the original ZIP character encoding.  If general purpose bit 11 is set, the
@@ -893,7 +900,9 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         //  Code Page 437 corresponds to kCFStringEncodingDOSLatinUS
         NSStringEncoding encoding = CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingDOSLatinUS);
         NSString* strPath = [NSString stringWithCString:filename encoding:encoding];
-        if(strPath) return strPath;
+        if (strPath) {
+            return strPath;
+        }
     }
     
     // attempting unicode encoding
@@ -1099,6 +1108,73 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo)
                                                  encoding:NSASCIIStringEncoding
                                              freeWhenDone:YES];
     return str;
+}
+
+@end
+
+#pragma mark Private tools for security
+
+@implementation NSString (SSZipArchive)
+
+// One implementation alternative would be to use the algorithm found at mz_path_resolve from https://github.com/nmoinvaz/minizip/blob/dev/mz_os.c,
+// but making sure to work with unichar values and not ascii values to avoid breaking Unicode characters containing 2E ('.') or 2F ('/') in their decomposition
+/// Sanitize path traversal characters to prevent directory backtracking. Ignoring these characters mimicks the default behavior of the Unarchiving tool on macOS.
+- (NSString *)_sanitizedPath
+{
+    // Change Windows paths to Unix paths: https://en.wikipedia.org/wiki/Path_(computing)
+    // Possible improvement: only do this if the archive was created on a non-Unix system
+    NSString *strPath = [self stringByReplacingOccurrencesOfString:@"\\" withString:@"/"];
+    
+    // Percent-encode file path (where path is defined by https://tools.ietf.org/html/rfc8089)
+    // The key part is to allow characters "." and "/" and disallow "%".
+    // CharacterSet.urlPathAllowed seems to do the job
+    // Testing availability of @available (https://stackoverflow.com/a/46927445/1033581)
+#if __clang_major__ < 9
+    // Xcode 8-
+    if (floor(NSFoundationVersionNumber) > NSFoundationVersionNumber10_8_4) {
+#else
+    // Xcode 9+
+    if (@available(macOS 10.9, iOS 7.0, watchOS 2.0, tvOS 9.0, *)) {
+#endif
+        strPath = [strPath stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLPathAllowedCharacterSet];
+    } else {
+        strPath = [strPath stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    }
+    
+    // `NSString.stringByAddingPercentEncodingWithAllowedCharacters:` may theorically fail: https://stackoverflow.com/questions/33558933/
+    // But because we auto-detect encoding using `NSString.stringEncodingForData:encodingOptions:convertedString:usedLossyConversion:`,
+    // we likely already prevent UTF-16, UTF-32 and invalid Unicode in the form of unpaired surrogate chars: https://stackoverflow.com/questions/53043876/
+    // To be on the safe side, we will still perform a guard check.
+    if (strPath == nil) {
+        return nil;
+    }
+    
+    // Add scheme "file:///" to support sanitation on names with a colon like "file:a/../../../usr/bin"
+    strPath = [@"file:///" stringByAppendingString:strPath];
+    
+    // Sanitize path traversal characters to prevent directory backtracking. Ignoring these characters mimicks the default behavior of the Unarchiving tool on macOS.
+    // "../../../../../../../../../../../tmp/test.txt" -> "tmp/test.txt"
+    // "a/b/../c.txt" -> "a/c.txt"
+    strPath = [NSURL URLWithString:strPath].standardizedURL.absoluteString;
+    
+    // Remove the "file:///" scheme
+    strPath = [strPath substringFromIndex:8];
+    
+    // Remove the percent-encoding
+    // Testing availability of @available (https://stackoverflow.com/a/46927445/1033581)
+#if __clang_major__ < 9
+    // Xcode 8-
+    if (floor(NSFoundationVersionNumber) > NSFoundationVersionNumber10_8_4) {
+#else
+    // Xcode 9+
+    if (@available(macOS 10.9, iOS 7.0, watchOS 2.0, tvOS 9.0, *)) {
+#endif
+        strPath = strPath.stringByRemovingPercentEncoding;
+    } else {
+        strPath = [strPath stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    }
+    
+    return strPath;
 }
 
 @end

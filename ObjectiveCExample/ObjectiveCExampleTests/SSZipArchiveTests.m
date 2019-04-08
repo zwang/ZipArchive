@@ -17,6 +17,10 @@
 @interface SSZipArchiveTests : XCTestCase
 @end
 
+@interface NSString (SSZipArchive)
+- (NSString *)_sanitizedPath;
+@end
+
 @implementation SSZipArchiveTests
 
 - (void)setUp {
@@ -359,6 +363,41 @@
     XCTAssertTrue(unicodeFolderWasExtracted, @"Folders with names in unicode should be extracted propertly.");
 }
 
+- (void)testZippingEmptyArchive {
+    
+    NSString *inputPath = [self _cachesPath:@"Empty"];
+    XCTAssert(![[NSFileManager defaultManager] enumeratorAtPath:inputPath].nextObject, @"The Empty cache folder should always be empty.");
+    NSString *outputPath = [self _cachesPath:@"Zipped"];
+    NSString *zipPath = [outputPath stringByAppendingPathComponent:@"Empty.zip"];
+    NSString *zipPath2 = [outputPath stringByAppendingPathComponent:@"EmptyWithParentDirectory.zip"];
+    
+    BOOL success = [SSZipArchive createZipFileAtPath:zipPath withContentsOfDirectory:inputPath keepParentDirectory:NO];
+    XCTAssertTrue(success);
+    success = [SSZipArchive createZipFileAtPath:zipPath2 withContentsOfDirectory:inputPath keepParentDirectory:YES];
+    XCTAssertTrue(success);
+    long long fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath:zipPath error:nil][NSFileSize] longLongValue];
+    long long fileSize2 = [[[NSFileManager defaultManager] attributesOfItemAtPath:zipPath2 error:nil][NSFileSize] longLongValue];
+    XCTAssert(fileSize < fileSize2, @"keepParentDirectory should produce a strictly bigger archive.");
+}
+
+- (void)testZippingAndUnzippingEmptyDirectoryWithPassword {
+    
+    NSString *inputPath = [self _cachesPath:@"Empty"];
+    XCTAssert(![[NSFileManager defaultManager] enumeratorAtPath:inputPath].nextObject, @"The Empty cache folder should always be empty.");
+    NSString *outputPath = [self _cachesPath:@"Zipped"];
+    NSString *zipPath = [outputPath stringByAppendingPathComponent:@"EmptyWithParentDirectory.zip"];
+    
+    BOOL success = [SSZipArchive createZipFileAtPath:zipPath withContentsOfDirectory:inputPath keepParentDirectory:YES withPassword:@"password"];
+    XCTAssertTrue(success);
+    
+    outputPath = [self _cachesPath:@"EmptyDirectory"];
+    
+    // unzipping a directory doesn't require a password
+    id<SSZipArchiveDelegate> delegate = [ProgressDelegate new];
+    success = [SSZipArchive unzipFileAtPath:zipPath toDestination:outputPath overwrite:YES password:nil error:nil delegate:delegate];
+    XCTAssertTrue(success);
+}
+
 - (void)testUnzippingEmptyArchive {
     
     NSString *zipPath = [[NSBundle bundleForClass:[self class]] pathForResource:@"Empty" ofType:@"zip"];
@@ -483,6 +522,51 @@
     
     XCTAssertEqualObjects(collector.files[0], [outputPath stringByAppendingString:@"/LICENSE"]);
     XCTAssertEqualObjects(collector.files[1], [outputPath stringByAppendingString:@"/Readme.markdown"]);
+}
+
+- (void)testUnzippingFileWithPathTraversalName {
+    
+    // This zip archive contains a file titled '../../../../../../../../../../..//tmp/test.txt'. SSZipArchive should
+    // ignore the path traversing and write the file to "tmp/test.txt"
+    NSString *zipPath = [[NSBundle bundleForClass:[self class]] pathForResource:@"PathTraversal" ofType:@"zip"];
+    NSString *outputPath = [self _cachesPath:@"Traversal"];
+    
+    id<SSZipArchiveDelegate> delegate = [ProgressDelegate new];
+    BOOL success = [SSZipArchive unzipFileAtPath:zipPath toDestination:outputPath delegate:delegate];
+    XCTAssertTrue(success);
+    
+    NSString *expectedFile = [outputPath stringByAppendingPathComponent:@"tmp/test.txt"];
+    BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:expectedFile];
+    
+    XCTAssertTrue(fileExists, @"Path traversal characters should not be followed when unarchiving a file");
+}
+
+- (void)testPathSanitation {
+    NSDictionary<NSString *, NSString *> *tests =
+    @{
+      // path traversal
+      @"../../../../../../../../../../../tmp/test.txt": @"tmp/test.txt",
+      // path traversal, Windows style
+      @"..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\tmp\\test.txt": @"tmp/test.txt",
+      // relative path
+      @"a/b/../c.txt": @"a/c.txt",
+      // path traversal without slash
+      @"..": @"",
+      // permissions override
+      @"./": @"",
+      @".": @"",
+      // unicode and spaces in folder name and file name
+      @"example/../à: 𝚨 󌞑/你 好.txt": @"à: 𝚨 󌞑/你 好.txt",
+      // unicode that looks like '.' or '/' in ascii decomposition
+      @"a/ğ/../b": @"a/b",
+      @"a/⸮/b/.ⸯ/c/⼮./d": @"a/⸮/b/.ⸯ/c/⼮./d",
+      // scheme in name
+      @"file:a/../../../usr/bin": @"usr/bin",
+      };
+    for (NSString *str in tests) {
+        //NSLog(@"%@", str);
+        XCTAssertTrue([tests[str] isEqualToString:[str _sanitizedPath]], @"Path should be sanitized for traversal");
+    }
 }
 
 #pragma mark - Private
