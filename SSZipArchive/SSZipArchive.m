@@ -7,9 +7,9 @@
 //
 
 #import "SSZipArchive.h"
-#include "unzip.h"
-#include "zip.h"
-#include "minishared.h"
+#include "minizip/unzip.h"
+#include "minizip/zip.h"
+#include "minizip/minishared.h"
 
 #include <sys/stat.h>
 
@@ -54,6 +54,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         return NO;
     }
     
+    BOOL passwordProtected = NO;
     int ret = unzGoToFirstFile(zip);
     if (ret == UNZ_OK) {
         do {
@@ -63,24 +64,26 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                 ret = unzOpenCurrentFilePassword(zip, "");
                 unzCloseCurrentFile(zip);
                 if (ret == UNZ_OK || ret == UNZ_BADPASSWORD) {
-                    return YES;
+                    passwordProtected = YES;
                 }
-                return NO;
+                break;
             }
             unz_file_info fileInfo = {};
             ret = unzGetCurrentFileInfo(zip, &fileInfo, NULL, 0, NULL, 0, NULL, 0);
             unzCloseCurrentFile(zip);
             if (ret != UNZ_OK) {
-                return NO;
+                break;
             } else if ((fileInfo.flag & 1) == 1) {
-                return YES;
+                passwordProtected = YES;
+                break;
             }
             
             ret = unzGoToNextFile(zip);
         } while (ret == UNZ_OK);
     }
     
-    return NO;
+    unzClose(zip);
+    return passwordProtected;
 }
 
 + (BOOL)isPasswordValidForArchiveAtPath:(NSString *)path password:(NSString *)pw error:(NSError **)error {
@@ -98,6 +101,8 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         return NO;
     }
 
+    // Initialize passwordValid to YES (No password required)
+    BOOL passwordValid = YES;
     int ret = unzGoToFirstFile(zip);
     if (ret == UNZ_OK) {
         do {
@@ -114,7 +119,8 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                                                  userInfo:@{NSLocalizedDescriptionKey: @"failed to open first file in zip file"}];
                     }
                 }
-                return NO;
+                passwordValid = NO;
+                break;
             }
             unz_file_info fileInfo = {};
             ret = unzGetCurrentFileInfo(zip, &fileInfo, NULL, 0, NULL, 0, NULL, 0);
@@ -124,7 +130,8 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                                                  code:SSZipArchiveErrorCodeFileInfoNotLoadable
                                              userInfo:@{NSLocalizedDescriptionKey: @"failed to retrieve info for file"}];
                 }
-                return NO;
+                passwordValid = NO;
+                break;
             } else if ((fileInfo.flag & 1) == 1) {
                 unsigned char buffer[10] = {0};
                 int readBytes = unzReadCurrentFile(zip, buffer, (unsigned)MIN(10UL,fileInfo.uncompressed_size));
@@ -138,9 +145,11 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                                                      userInfo:@{NSLocalizedDescriptionKey: @"failed to read contents of file entry"}];
                         }
                     }
-                    return NO;
+                    passwordValid = NO;
+                    break;
                 }
-                return YES;
+                passwordValid = YES;
+                break;
             }
             
             unzCloseCurrentFile(zip);
@@ -148,8 +157,8 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         } while (ret == UNZ_OK);
     }
     
-    // No password required
-    return YES;
+    unzClose(zip);
+    return passwordValid;
 }
 
 #pragma mark - Unzipping
@@ -287,6 +296,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         {
             completionHandler(nil, NO, err);
         }
+        unzClose(zip);
         return NO;
     }
     
@@ -511,12 +521,44 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                     else
                     {
                         // if we couldn't open file descriptor we can validate global errno to see the reason
-                        if (errno == ENOSPC) {
-                            NSError *enospcError = [NSError errorWithDomain:NSPOSIXErrorDomain
-                                                                       code:ENOSPC
-                                                                   userInfo:nil];
-                            unzippingError = enospcError;
+                        int errnoSave = errno;
+                        BOOL isSeriousError = NO;
+                        switch (errnoSave) {
+                            case EISDIR:
+                                // Is a directory
+                                // assumed case
+                                break;
+                                
+                            case ENOSPC:
+                            case EMFILE:
+                                // No space left on device
+                                //  or
+                                // Too many open files
+                                isSeriousError = YES;
+                                break;
+                                
+                            default:
+                                // ignore case
+                                // Just log the error
+                            {
+                                NSError *errorObject = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                                           code:errnoSave
+                                                                       userInfo:nil];
+                                NSLog(@"[SSZipArchive] Failed to open file on unzipping.(%@)", errorObject);
+                            }
+                                break;
+                        }
+                        
+                        if (isSeriousError) {
+                            // serious case
+                            unzippingError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                                 code:errnoSave
+                                                             userInfo:nil];
                             unzCloseCurrentFile(zip);
+                            // Log the error
+                            NSLog(@"[SSZipArchive] Failed to open file on unzipping.(%@)", unzippingError);
+
+                            // Break unzipping
                             success = NO;
                             break;
                         }
@@ -954,7 +996,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             [self zipInfo:zipInfo setDate:fileDate];
         }
         
-        // Write permissions into the external attributes, for details on this see here: http://unix.stackexchange.com/a/14727
+        // Write permissions into the external attributes, for details on this see here: https://unix.stackexchange.com/a/14727
         // Get the permissions value from the files attributes
         NSNumber *permissionsValue = (NSNumber *)[attr objectForKey:NSFilePosixPermissions];
         if (permissionsValue != nil) {
@@ -1050,13 +1092,13 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo)
     //
     // Determine whether this is a symbolic link:
     // - File is stored with 'version made by' value of UNIX (3),
-    //   as per http://www.pkware.com/documents/casestudies/APPNOTE.TXT
+    //   as per https://www.pkware.com/documents/casestudies/APPNOTE.TXT
     //   in the upper byte of the version field.
     // - BSD4.4 st_mode constants are stored in the high 16 bits of the
     //   external file attributes (defacto standard, verified against libarchive)
     //
     // The original constants can be found here:
-    //    http://minnie.tuhs.org/cgi-bin/utree.pl?file=4.4BSD/usr/include/sys/stat.h
+    //    https://minnie.tuhs.org/cgi-bin/utree.pl?file=4.4BSD/usr/include/sys/stat.h
     //
     const uLong ZipUNIXVersion = 3;
     const uLong BSD_SFMT = 0170000;
@@ -1128,6 +1170,9 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo)
     // Percent-encode file path (where path is defined by https://tools.ietf.org/html/rfc8089)
     // The key part is to allow characters "." and "/" and disallow "%".
     // CharacterSet.urlPathAllowed seems to do the job
+#if (__MAC_OS_X_VERSION_MIN_REQUIRED >= 1090 || __IPHONE_OS_VERSION_MIN_REQUIRED >= 70000 || __WATCH_OS_VERSION_MIN_REQUIRED >= 20000 || __TV_OS_VERSION_MIN_REQUIRED >= 90000)
+    strPath = [strPath stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLPathAllowedCharacterSet];
+#else
     // Testing availability of @available (https://stackoverflow.com/a/46927445/1033581)
 #if __clang_major__ < 9
     // Xcode 8-
@@ -1140,6 +1185,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo)
     } else {
         strPath = [strPath stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
     }
+#endif
     
     // `NSString.stringByAddingPercentEncodingWithAllowedCharacters:` may theorically fail: https://stackoverflow.com/questions/33558933/
     // But because we auto-detect encoding using `NSString.stringEncodingForData:encodingOptions:convertedString:usedLossyConversion:`,
@@ -1161,6 +1207,9 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo)
     strPath = [strPath substringFromIndex:8];
     
     // Remove the percent-encoding
+#if (__MAC_OS_X_VERSION_MIN_REQUIRED >= 1090 || __IPHONE_OS_VERSION_MIN_REQUIRED >= 70000 || __WATCH_OS_VERSION_MIN_REQUIRED >= 20000 || __TV_OS_VERSION_MIN_REQUIRED >= 90000)
+    strPath = strPath.stringByRemovingPercentEncoding;
+#else
     // Testing availability of @available (https://stackoverflow.com/a/46927445/1033581)
 #if __clang_major__ < 9
     // Xcode 8-
@@ -1173,6 +1222,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo)
     } else {
         strPath = [strPath stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
     }
+#endif
     
     return strPath;
 }
